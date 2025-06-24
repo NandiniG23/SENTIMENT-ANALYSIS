@@ -34,9 +34,9 @@ scikit-learn
 
 
 ## OutPut
-    ### POSITIVE:
+    ### POSITIVE
 ![image](https://github.com/user-attachments/assets/6f27ae3d-54c4-47c6-b3a6-42560e579ffd)
 
-     ### NEGATIVE:
+     ### NEGATIVE
 ![image](https://github.com/user-attachments/assets/25a9a2d9-d034-4b3d-bb63-5081f43dd23a)
 
