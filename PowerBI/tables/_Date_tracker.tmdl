@@ -1,0 +1,63 @@
+createOrReplace
+
+	table _Date_tracker
+
+		column DateKey
+			dataType: int64
+			summarizeBy: none
+			sourceColumn: [DateKey]
+			lineageTag: a1b2c3d4-0001-0001-0001-000000000001
+
+			annotation SummarizationSetBy = Automatic
+
+		column Date
+			dataType: dateTime
+			formatString: Short Date
+			summarizeBy: none
+			sourceColumn: [Date]
+			lineageTag: a1b2c3d4-0001-0001-0001-000000000002
+
+			annotation SummarizationSetBy = Automatic
+			annotation UnderlyingDateTimeDataType = Date
+
+		column Date_Text
+			dataType: string
+			summarizeBy: none
+			sourceColumn: [Date_Text]
+			sortByColumn: DateKey
+			lineageTag: a1b2c3d4-0001-0001-0001-000000000003
+
+			annotation SummarizationSetBy = Automatic
+
+		column 'Month MM-YY'
+			dataType: string
+			summarizeBy: none
+			sourceColumn: [Month MM-YY]
+			sortByColumn: 'Month Index'
+			lineageTag: a1b2c3d4-0001-0001-0001-000000000004
+
+			annotation SummarizationSetBy = Automatic
+
+		column 'Month Index'
+			dataType: int64
+			summarizeBy: none
+			sourceColumn: [Month Index]
+			lineageTag: a1b2c3d4-0001-0001-0001-000000000005
+
+			annotation SummarizationSetBy = Automatic
+
+		partition _Date_tracker = calculated
+			mode: import
+			dataView: full
+			source = ```
+
+					ADDCOLUMNS (
+					    CALENDAR ( DATE ( 2024, 1, 1 ), TODAY () - 1 ),
+					    "DateKey", YEAR ( [Date] ) * 10000 + MONTH ( [Date] ) * 100 + DAY ( [Date] ),
+					    "Date_Text", FORMAT ( [Date], "d-MMM-yy" ),
+					    "Month MM-YY", FORMAT ( [Date], "MMM-yy" ),
+					    "Month Index", YEAR ( [Date] ) * 100 + MONTH ( [Date] )
+					)
+
+					```
+
