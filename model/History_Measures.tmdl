@@ -1,0 +1,341 @@
+createOrReplace
+
+	table History_Measures
+		lineageTag: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+		/// Daily count of newly-created open orders for tracked coordinators.
+		measure 'Created (Open File)' = ```
+
+				VAR d = SELECTEDVALUE ( _Date_tracker[Date] )
+				RETURN
+				IF (
+				    ISBLANK ( d ),
+				    BLANK (),
+				    CALCULATE (
+				        COUNTROWS ( Open_Order ),
+				        FILTER (
+				            Open_Order,
+				            DATEVALUE ( Open_Order[Created Date] ) = d
+				                && TRIM ( Open_Order[Status] ) IN { "Manage", "Release" }
+				                && TRIM ( Open_Order[Delivery Order Owner] )
+				                    IN {
+				                        "Amit VETHEKAR",
+				                        "Rohan Lokhande",
+				                        "Akshay CHAPKE",
+				                        "vaibhav rane"
+				                    }
+				        )
+				    )
+				)
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000001
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Daily count of newly-created closed orders (by created date).
+		measure 'Created (Closed File)' = ```
+
+				VAR d = SELECTEDVALUE ( _Date_tracker[Date] )
+				RETURN
+				IF (
+				    ISBLANK ( d ),
+				    BLANK (),
+				    CALCULATE (
+				        DISTINCTCOUNT ( Closed_order[Order Reference] ),
+				        Closed_order[Created_Date_Only] = d
+				    )
+				)
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000002
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Sum of new open and closed orders created on the selected date.
+		measure 'Total New Created (Open+Closed)' = ```
+
+				[Created (Open File)] + [Created (Closed File)]
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000003
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Daily count of orders closed (by closed date).
+		measure 'Actual Closed' = ```
+
+				VAR d = SELECTEDVALUE ( _Date_tracker[Date] )
+				RETURN
+				IF (
+				    ISBLANK ( d ),
+				    BLANK (),
+				    CALCULATE (
+				        DISTINCTCOUNT ( Closed_order[Order Reference] ),
+				        Closed_order[Closed_Date_Only] = d
+				    )
+				)
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000004
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Daily count of orders that moved to billing status for tracked coordinators.
+		measure 'Move to Billing' = ```
+
+				VAR d = SELECTEDVALUE ( _Date_tracker[Date] )
+				RETURN
+				IF (
+				    ISBLANK ( d ),
+				    BLANK (),
+				    CALCULATE (
+				        COUNTROWS ( Open_Order ),
+				        FILTER (
+				            Open_Order,
+				            DATEVALUE ( Open_Order[Effective Billing Date] ) = d
+				                && TRIM ( Open_Order[Status] ) IN { "Acceptance", "Billing", "On-Hold" }
+				                && Open_Order[Del Order Coordinator]
+				                    IN {
+				                        "Amit VETHEKAR",
+				                        "Rohan Lokhande",
+				                        "vaibhav rane",
+				                        "Akshay CHAPKE",
+				                        "Ajit Ponkshe"
+				                    }
+				        )
+				    )
+				)
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000005
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Daily total closed count.
+		/// NOTE: The original History_Open[Total Closed(Closed+billing)] column was defined as
+		/// [Acutal closed] only (billing was NOT added despite the name).
+		/// To include billing, replace [Actual Closed] with [Actual Closed] + [Move to Billing].
+		measure 'Total Closed (Closed+Billing)' = ```
+
+				[Actual Closed]
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000006
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Cumulative total of new created orders (open+closed) up to and including the selected date.
+		/// Returns 0 for future dates (> TODAY()).
+		measure 'Running Open' = ```
+
+				VAR d = MAX ( _Date_tracker[Date] )
+				RETURN
+				IF (
+				    d > TODAY (),
+				    0,
+				    CALCULATE (
+				        [Total New Created (Open+Closed)],
+				        FILTER ( ALL ( _Date_tracker[Date] ), _Date_tracker[Date] <= d )
+				    )
+				)
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000007
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Cumulative total of closed (+ billing) orders up to and including the selected date.
+		/// Returns 0 for future dates (> TODAY()).
+		measure 'Running Total Closed (Closed+Billing)' = ```
+
+				VAR d = MAX ( _Date_tracker[Date] )
+				RETURN
+				IF (
+				    d > TODAY (),
+				    0,
+				    CALCULATE (
+				        [Total Closed (Closed+Billing)],
+				        FILTER ( ALL ( _Date_tracker[Date] ), _Date_tracker[Date] <= d )
+				    )
+				)
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000008
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Net open orders at the selected date: Running Open minus Running Total Closed.
+		measure 'Actual Open' = ```
+
+				[Running Open] - [Running Total Closed (Closed+Billing)]
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000009
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Daily sum of closed order gold totals (One Off Total Gold) for the selected date.
+		measure OneOff_Plus_Monthly_EUR_Closed_Factored = ```
+
+				VAR d = SELECTEDVALUE ( _Date_tracker[Date] )
+				RETURN
+				IF (
+				    ISBLANK ( d ),
+				    BLANK (),
+				    CALCULATE (
+				        SUM ( Closed_order[One Off Total Gold] ),
+				        Closed_order[Closed_Date_Only] = d
+				    )
+				)
+
+				```
+			formatString: "₹"\ #,0.00;#,0.00\ -"₹";"₹"\ #,0.00
+			lineageTag: 11111111-0000-0000-0000-000000000010
+
+			annotation SummarizationSetBy = Automatic
+			annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+		/// Daily sum of open order EUR charges (one-off + monthly) for the selected date,
+		/// factored by 100.351 (INR/EUR conversion rate as used in the original History_Open model).
+		measure OneOff_Chgs_EUR_Open_Factored = ```
+
+				VAR d = SELECTEDVALUE ( _Date_tracker[Date] )
+				RETURN
+				IF (
+				    ISBLANK ( d ),
+				    BLANK (),
+				    CALCULATE (
+				        SUM ( Open_Order[Tot One Off Chgs Eur] )
+				            + SUM ( Open_Order[Tot Month Chgs Eur] ),
+				        Open_Order[Created Date] = d
+				    ) * 100.351
+				)
+
+				```
+			formatString: "₹"\ #,0;#,0\ -"₹";"₹"\ #,0
+			lineageTag: 11111111-0000-0000-0000-000000000011
+
+			annotation SummarizationSetBy = Automatic
+			annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+		/// Total closed amount across all dates (sum of OneOff_Plus_Monthly_EUR_Closed_Factored measure).
+		measure 'Total Closed Amt' = ```
+
+				CALCULATE (
+				    [OneOff_Plus_Monthly_EUR_Closed_Factored],
+				    ALL ( _Date_tracker )
+				)
+
+				```
+			formatString: "₹"\ #,0.00;#,0.00\ -"₹";"₹"\ #,0.00
+			lineageTag: 11111111-0000-0000-0000-000000000012
+
+			annotation SummarizationSetBy = Automatic
+			annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+		/// Total new created orders (open+closed) across all dates in context.
+		measure 'Total New Created (All)' = ```
+
+				[Total New Created (Open+Closed)]
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000013
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Month-to-date total of new created orders (open+closed) using _Date_tracker[Date].
+		measure 'Current Month Total New Created' = ```
+
+				TOTALMTD (
+				    [Total New Created (All)],
+				    _Date_tracker[Date]
+				)
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000014
+
+			annotation SummarizationSetBy = Automatic
+
+		/// Month-to-date closed amount using _Date_tracker[Date].
+		measure MTD_Closed_Amount = ```
+
+				TOTALMTD (
+				    [OneOff_Plus_Monthly_EUR_Closed_Factored],
+				    _Date_tracker[Date]
+				)
+
+				```
+			formatString: "₹"\ #,0.00;#,0.00\ -"₹";"₹"\ #,0.00
+			lineageTag: 11111111-0000-0000-0000-000000000015
+
+			annotation SummarizationSetBy = Automatic
+			annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+		/// Month-to-date open amount using _Date_tracker[Date].
+		measure MTD_Open_Amount = ```
+
+				TOTALMTD (
+				    [OneOff_Chgs_EUR_Open_Factored],
+				    _Date_tracker[Date]
+				)
+
+				```
+			formatString: "₹"\ #,0;#,0\ -"₹";"₹"\ #,0
+			lineageTag: 11111111-0000-0000-0000-000000000016
+
+			annotation SummarizationSetBy = Automatic
+			annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+		/// Closed amount for February 2026 only.
+		measure 'Feb_26 Closed Amt' = ```
+
+				CALCULATE (
+				    [Total Closed Amt],
+				    _Date_tracker[Month MM-YY] = "Feb-26"
+				)
+
+				```
+			formatString: "₹"\ #,0.00;#,0.00\ -"₹";"₹"\ #,0.00
+			lineageTag: 11111111-0000-0000-0000-000000000017
+
+			annotation SummarizationSetBy = Automatic
+			annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+		/// Closed amount for March 2026 only.
+		measure 'Mar_26 Closed Amt' = ```
+
+				CALCULATE (
+				    [Total Closed Amt],
+				    _Date_tracker[Month MM-YY] = "Mar-26"
+				)
+
+				```
+			formatString: "₹"\ #,0.00;#,0.00\ -"₹";"₹"\ #,0.00
+			lineageTag: 11111111-0000-0000-0000-000000000018
+
+			annotation SummarizationSetBy = Automatic
+			annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+		/// Daily count of orders that moved to billing (same as [Move to Billing] measure).
+		measure 'Total in billing' = ```
+
+				[Move to Billing]
+
+				```
+			formatString: 0
+			lineageTag: 11111111-0000-0000-0000-000000000019
+
+			annotation SummarizationSetBy = Automatic
+
