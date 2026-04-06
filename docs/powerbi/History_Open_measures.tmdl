@@ -1,0 +1,402 @@
+/// TMDL snippet — paste into Tabular Editor 3 (Model.tmdl or a new file)
+/// Replaces the History_Open calculated table with a proper DimDate table
+/// and a set of measures hosted in the _Measures display folder.
+///
+/// Steps:
+///   1. Open your .pbix in Tabular Editor 3.
+///   2. Copy-paste the DimDate section below into your model (or add via "New Table").
+///   3. Mark DimDate as the Date Table (Date column = DimDate[Date]).
+///   4. Create relationships as described in docs/powerbi/dax-measures.md.
+///   5. Copy-paste the measures section into an existing table or a new _Measures table.
+///   6. Delete the History_Open table once all visuals are re-bound.
+
+/// ─────────────────────────────────────────────
+/// DATE DIMENSION TABLE
+/// ─────────────────────────────────────────────
+
+createOrReplace
+
+    table DimDate
+        lineageTag: 00000001-0000-0000-0000-000000000001
+        isDateTable
+
+        partition DimDate = calculated
+            mode: import
+            source = ```
+                DimDate =
+                VAR StartDate = DATE(2024, 1, 1)
+                VAR EndDate   = TODAY() + 365
+                RETURN
+                ADDCOLUMNS(
+                    CALENDAR(StartDate, EndDate),
+                    "Year YYYY",    FORMAT([Date], "YYYY"),
+                    "Month Index",  YEAR([Date]) * 100 + MONTH([Date]),
+                    "Month MM-YY",  FORMAT([Date], "MMM-yy"),
+                    "Date Text",    FORMAT([Date], "d-MMM-yy"),
+                    "Day of Week",  WEEKDAY([Date], 2),
+                    "Quarter",      "Q" & QUARTER([Date])
+                )
+                ```
+
+        column Date
+            dataType: dateTime
+            formatString: Short Date
+            lineageTag: 00000001-0000-0000-0000-000000000002
+            summarizeBy: none
+            isKey
+            sourceColumn: [Date]
+
+        column 'Year YYYY'
+            dataType: string
+            lineageTag: 00000001-0000-0000-0000-000000000003
+            summarizeBy: none
+            sourceColumn: [Year YYYY]
+
+        column 'Month Index'
+            dataType: int64
+            formatString: 0
+            lineageTag: 00000001-0000-0000-0000-000000000004
+            summarizeBy: none
+            sourceColumn: [Month Index]
+
+        column 'Month MM-YY'
+            dataType: string
+            lineageTag: 00000001-0000-0000-0000-000000000005
+            summarizeBy: none
+            sortByColumn: 'Month Index'
+            sourceColumn: [Month MM-YY]
+
+        column 'Date Text'
+            dataType: string
+            lineageTag: 00000001-0000-0000-0000-000000000006
+            summarizeBy: none
+            sortByColumn: Date
+            sourceColumn: [Date Text]
+
+        column 'Day of Week'
+            dataType: int64
+            lineageTag: 00000001-0000-0000-0000-000000000007
+            summarizeBy: none
+            sourceColumn: [Day of Week]
+
+        column Quarter
+            dataType: string
+            lineageTag: 00000001-0000-0000-0000-000000000008
+            summarizeBy: none
+            sourceColumn: [Quarter]
+
+
+/// ─────────────────────────────────────────────
+/// MEASURES  (host table: _Measures)
+/// ─────────────────────────────────────────────
+
+createOrReplace
+
+    table _Measures
+        lineageTag: 00000002-0000-0000-0000-000000000001
+
+        /// ── Daily count / amount measures ──────────────────────
+
+        measure 'Created (Open File)' = ```
+
+            VAR CurrentDate = SELECTEDVALUE('DimDate'[Date])
+            RETURN
+            IF(
+                ISBLANK(CurrentDate),
+                BLANK(),
+                CALCULATE(
+                    COUNTROWS(Open_Order),
+                    FILTER(
+                        Open_Order,
+                        DATEVALUE(Open_Order[Created Date]) = CurrentDate
+                            && TRIM(Open_Order[Status]) IN {"Manage", "Release"}
+                            && TRIM(Open_Order[Delivery Order Owner])
+                                IN {"Amit VETHEKAR", "Rohan Lokhande", "Akshay CHAPKE", "vaibhav rane"}
+                    )
+                )
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000002
+
+        measure 'Created (Closed File)' = ```
+
+            VAR CurrentDate = SELECTEDVALUE('DimDate'[Date])
+            RETURN
+            IF(
+                ISBLANK(CurrentDate),
+                BLANK(),
+                CALCULATE(
+                    DISTINCTCOUNT(Closed_order[Order Reference]),
+                    USERELATIONSHIP(Closed_order[Created_Date_Only], 'DimDate'[Date]),
+                    'DimDate'[Date] = CurrentDate
+                )
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000003
+
+        measure 'Total New Created (Open+Closed)' = ```
+
+            [Created (Open File)] + [Created (Closed File)]
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000004
+
+        measure 'Actual Closed' = ```
+
+            VAR CurrentDate = SELECTEDVALUE('DimDate'[Date])
+            RETURN
+            IF(
+                ISBLANK(CurrentDate),
+                BLANK(),
+                CALCULATE(
+                    DISTINCTCOUNT(Closed_order[Order Reference]),
+                    USERELATIONSHIP(Closed_order[Closed_Date_Only], 'DimDate'[Date]),
+                    'DimDate'[Date] = CurrentDate
+                )
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000005
+
+        measure 'Move to Billing' = ```
+
+            VAR CurrentDate = SELECTEDVALUE('DimDate'[Date])
+            RETURN
+            IF(
+                ISBLANK(CurrentDate),
+                BLANK(),
+                CALCULATE(
+                    COUNTROWS(Open_Order),
+                    USERELATIONSHIP(Open_Order[Effective Billing Date], 'DimDate'[Date]),
+                    FILTER(
+                        Open_Order,
+                        DATEVALUE(Open_Order[Effective Billing Date]) = CurrentDate
+                            && TRIM(Open_Order[Status]) IN {"Acceptance", "Billing", "On-Hold"}
+                            && Open_Order[Del Order Coordinator]
+                                IN {
+                                    "Amit VETHEKAR",
+                                    "Rohan Lokhande",
+                                    "vaibhav rane",
+                                    "Akshay CHAPKE",
+                                    "Ajit Ponkshe"
+                                }
+                    )
+                )
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000006
+
+        measure 'Total Closed (Closed+Billing)' = ```
+
+            [Actual Closed]
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000007
+
+        measure OneOff_Plus_Monthly_EUR_Closed_Factored = ```
+
+            VAR CurrentDate = SELECTEDVALUE('DimDate'[Date])
+            RETURN
+            IF(
+                ISBLANK(CurrentDate),
+                BLANK(),
+                CALCULATE(
+                    SUM(Closed_order[One Off Total Gold]),
+                    USERELATIONSHIP(Closed_order[Closed_Date_Only], 'DimDate'[Date]),
+                    'DimDate'[Date] = CurrentDate
+                )
+            )
+
+            ```
+            formatString: "₹"\ #,0.00;#,0.00\ -"₹";"₹"\ #,0.00
+            lineageTag: 00000002-0000-0000-0000-000000000008
+
+            annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+        measure OneOff_Chgs_EUR_Open_Factored = ```
+
+            VAR CurrentDate = SELECTEDVALUE('DimDate'[Date])
+            VAR BaseAmt =
+                IF(
+                    ISBLANK(CurrentDate),
+                    BLANK(),
+                    CALCULATE(
+                        SUM(Open_Order[Tot One Off Chgs Eur])
+                            + SUM(Open_Order[Tot Month Chgs Eur]),
+                        Open_Order[Created Date] = CurrentDate
+                    )
+                )
+            RETURN
+                BaseAmt * 100.351
+
+            ```
+            formatString: "₹"\ #,0;#,0\ -"₹";"₹"\ #,0
+            lineageTag: 00000002-0000-0000-0000-000000000009
+
+            annotation PBI_FormatHint = {"currencyCulture":"bn-IN"}
+
+        /// ── Running total measures ──────────────────────────────
+
+        measure 'Running Open' = ```
+
+            VAR CurrentDate = SELECTEDVALUE('DimDate'[Date])
+            RETURN
+            IF(
+                ISBLANK(CurrentDate) || CurrentDate >= TODAY(),
+                0,
+                CALCULATE(
+                    [Total New Created (Open+Closed)],
+                    FILTER(
+                        ALL('DimDate'),
+                        'DimDate'[Date] <= CurrentDate
+                            && 'DimDate'[Date] >= DATE(2024, 1, 1)
+                    )
+                )
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000010
+
+        measure 'Running Total Closed (Closed+Billing)' = ```
+
+            VAR CurrentDate = SELECTEDVALUE('DimDate'[Date])
+            RETURN
+            IF(
+                ISBLANK(CurrentDate) || CurrentDate >= TODAY(),
+                0,
+                CALCULATE(
+                    [Total Closed (Closed+Billing)],
+                    FILTER(
+                        ALL('DimDate'),
+                        'DimDate'[Date] <= CurrentDate
+                            && 'DimDate'[Date] >= DATE(2024, 1, 1)
+                    )
+                )
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000011
+
+        measure 'Actual Open' = ```
+
+            [Running Open] - [Running Total Closed (Closed+Billing)]
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000012
+
+        /// ── Aggregate / MTD measures ────────────────────────────
+
+        measure 'Total New Created (All)' = ```
+
+            SUMX(
+                VALUES('DimDate'[Date]),
+                [Total New Created (Open+Closed)]
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000013
+
+        measure 'Current Month Total New Created (MTD)' = ```
+
+            TOTALMTD(
+                [Total New Created (All)],
+                'DimDate'[Date]
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000014
+
+        measure 'Total Closed Amt' = ```
+
+            SUMX(
+                VALUES('DimDate'[Date]),
+                [OneOff_Plus_Monthly_EUR_Closed_Factored]
+            )
+
+            ```
+            lineageTag: 00000002-0000-0000-0000-000000000015
+
+            annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+        measure 'Feb_26 Closed Amt' = ```
+
+            CALCULATE(
+                [Total Closed Amt],
+                'DimDate'[Month MM-YY] = "Feb-26"
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000016
+
+            annotation PBI_FormatHint = {"isDecimal":true}
+
+        measure 'Mar_26 Closed Amt' = ```
+
+            CALCULATE(
+                [Total Closed Amt],
+                'DimDate'[Month MM-YY] = "Mar-26"
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000017
+
+            annotation PBI_FormatHint = {"isDecimal":true}
+
+        measure MTD_Closed_Amount = ```
+
+            TOTALMTD(
+                [Total Closed Amt],
+                'DimDate'[Date]
+            )
+
+            ```
+            lineageTag: 00000002-0000-0000-0000-000000000018
+
+            annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+        measure MTD_Open_Amount = ```
+
+            TOTALMTD(
+                SUMX(VALUES('DimDate'[Date]), [OneOff_Chgs_EUR_Open_Factored]),
+                'DimDate'[Date]
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000019
+
+            annotation PBI_FormatHint = {"isDecimal":true}
+
+        /// ── Legacy compatibility measure ────────────────────────
+        /// Keeps old measure name 'Total in billing' pointing to Move to Billing
+
+        measure 'Total in billing' = ```
+
+            SUMX(
+                VALUES('DimDate'[Date]),
+                [Move to Billing]
+            )
+
+            ```
+            formatString: 0
+            lineageTag: 00000002-0000-0000-0000-000000000020
+
+        partition _Measures = calculated
+            mode: import
+            source = "ROW(""Dummy"", 1)"
